@@ -1,0 +1,2 @@
+NATS_DB_QUERY_TOPIC=db-query
+NATS_ANSWER_TOPIC=answer
