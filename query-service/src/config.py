@@ -13,3 +13,4 @@ def get_logger(name: str) -> logging.Logger:
 NATS_HOST = os.getenv("NATS_HOST", "nats-server")
 NATS_PORT = int(os.getenv("NATS_PORT", 4222))
 NATS_DB_QUERY_TOPIC = os.getenv("NATS_DB_QUERY_TOPIC", "db-query")
+KUZU_DB_PATH = os.getenv("KUZU_DB_PATH", "graph.db")
