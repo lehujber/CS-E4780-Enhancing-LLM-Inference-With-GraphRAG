@@ -12,8 +12,7 @@ from .exemplars import get_fewshot_block
 load_dotenv()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 lm = dspy.LM(
-    model="openrouter/google/gemini-2.0-flash-001",
-    api_base="https://openrouter.ai/api/v1",
+    "openrouter/google/gemini-2.0-flash-001",
     api_key=OPENROUTER_API_KEY,
 )
 dspy.configure(lm=lm)
