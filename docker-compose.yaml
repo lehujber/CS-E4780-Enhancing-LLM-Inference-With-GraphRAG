@@ -74,6 +74,7 @@ services:
       - NATS_HOST=nats
       - NATS_PORT=4222
       - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+      - KUZU_DB_PATH=/data/kuzu/nobel.kuzu
     volumes:
       - kuzu-data:/data/kuzu
 
