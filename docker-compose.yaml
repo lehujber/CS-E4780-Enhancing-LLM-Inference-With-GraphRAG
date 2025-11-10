@@ -41,17 +41,28 @@ services:
       - NATS_PORT=4222
       - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
       - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+  
+  kuzu-setup-script:
+    build: ./kuzu-setup-script
+    depends_on:
+      - answer-service
+    networks: ["pipeline"]
+    volumes:
+      - kuzu-data:/data/kuzu
     
   query-service:
     build: ./query-service
     depends_on:
       - nats
+      - kuzu-setup-script
     networks: ["pipeline"]
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - NATS_HOST=nats
       - NATS_PORT=4222
       - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
+    volumes:
+      - kuzu-data:/data/kuzu
 
   answer-service:
     build: ./answer-service
@@ -63,7 +74,13 @@ services:
       - NATS_HOST=nats
       - NATS_PORT=4222
       - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+    volumes:
+      - kuzu-data:/data/kuzu
 
 networks:
   pipeline:
     name: pipeline
+
+volumes:
+  kuzu-data:
+    name: kuzu-data
