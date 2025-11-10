@@ -9,7 +9,7 @@ from .config import (
     NATS_HOST,
     NATS_PORT,
     NATS_DB_QUERY_TOPIC as topic,
-    KUZU_DB_PATH,      # make sure this is in your config or env
+    KUZU_DB_PATH,      
     get_logger,
 )
 
