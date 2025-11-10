@@ -13,7 +13,7 @@ from .config import (
     get_logger,
 )
 
-from modules.text2cypher import generate_cypher
+from .modules.text2cypher import generate_cypher
 
 logger = get_logger("main")
 

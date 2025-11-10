@@ -5,24 +5,9 @@ services:
       - "8222:8222"
     command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --http_port 8222 "
     networks: ["pipeline"]
-  nats-1:
-    image: nats
-    command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --routes=nats://ruser:T0pS3cr3t@nats:6222"
-    networks: ["pipeline"]
-    depends_on: ["nats"]
-  nats-2:
-    image: nats
-    command: "--cluster_name NATS --cluster nats://0.0.0.0:6222 --routes=nats://ruser:T0pS3cr3t@nats:6222"
-    networks: ["pipeline"]
-    depends_on: ["nats"]
 
   memcached:
     image: memcached:1.6.39-alpine
-    command:
-      - --conn-limit=1024
-      - --memory-limit=64
-      - --threads=4
-      - -p 11211
     networks: ["pipeline"]
 
   question-api:
@@ -39,9 +24,9 @@ services:
       - MEMCACHE_PORT=11211
       - NATS_HOST=nats
       - NATS_PORT=4222
-      - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
-      - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
-    
+      - NATS_DB_QUERY_TOPIC=db-query
+      - NATS_ANSWER_TOPIC=answer
+
   query-service:
     build: ./query-service
     depends_on:
@@ -51,7 +36,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - NATS_HOST=nats
       - NATS_PORT=4222
-      - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
+      - NATS_DB_QUERY_TOPIC=db-query
+      - KUZU_DB_PATH=/database/nobel.kuzu
+    volumes:
+      - kuzu_db:/database:rw
 
   answer-service:
     build: ./answer-service
@@ -62,7 +50,23 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - NATS_HOST=nats
       - NATS_PORT=4222
-      - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+      - NATS_ANSWER_TOPIC=answer
+
+  explorer:
+    image: kuzudb/explorer:0.11.1
+    environment:
+      - MODE=READ_ONLY
+      - KUZU_FILE=/database/nobel.kuzu
+    ports:
+      - "8001:8000"
+    volumes:
+      - kuzu_db:/database:ro
+    networks: ["pipeline"]
+    depends_on:
+      - query-service
+
+volumes:
+  kuzu_db:
 
 networks:
   pipeline:
