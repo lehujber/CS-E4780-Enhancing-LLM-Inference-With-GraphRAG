@@ -64,6 +64,7 @@ services:
       - NATS_PORT=4222
       - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
       - KUZU_DB_PATH=/data/kuzu/nobel.kuzu
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - kuzu-data:/data/kuzu
 
@@ -77,6 +78,7 @@ services:
       - NATS_HOST=nats
       - NATS_PORT=4222
       - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 
 networks:
   pipeline:
