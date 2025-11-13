@@ -28,7 +28,7 @@ def run_query(question: str) -> dict:
     return {
         "question": question,
         "cypher": cypher,
-        "columns": list(res.column_names()),
+        "columns": res.get_column_names(), # In Kuzu 0.11+, use get_column_names() instead of column_names()
         "rows": [list(r) for r in res],
     }
 

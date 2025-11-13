@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import json
 
 from pymemcache.client import base
 
@@ -66,13 +67,14 @@ async def answer_question(question: QuestionRequest):
 
     try:
         logger.debug(f"Requested question on NATS topic {db_query_topic}")
-        db_answer = await nats_client.request(db_query_topic, question.question.encode())
+        db_request_payload = json.dumps({"question": question.question}).encode()
+        db_answer = await nats_client.request(db_query_topic, db_request_payload, timeout=30)
 
         data = db_answer.data.decode()  
         logger.debug(f"Received DB answer: {data}")
 
         logger.debug(f"Requested answer on NATS topic {answer_topic}")
-        question_answer = await nats_client.request(answer_topic, data.encode())
+        question_answer = await nats_client.request(answer_topic, data.encode(), timeout=30)
     
         answer = question_answer.data.decode()
 
