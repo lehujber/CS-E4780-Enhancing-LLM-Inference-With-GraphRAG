@@ -28,7 +28,9 @@ services:
   question-api:
     build:
       context: ./question-api
-      target: app
+      target: perf
+    cap_add:
+      - SYS_PTRACE
     ports:
       - "8000:8000"
     depends_on:
@@ -45,6 +47,8 @@ services:
       - NATS_PORT=4222
       - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
       - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+    volumes:
+      - ./perf:/perf
   
   kuzu-setup-script:
     build: ./kuzu-setup-script
@@ -57,7 +61,9 @@ services:
   query-service:
     build:
       context: ./query-service
-      target: app
+      target: perf
+    cap_add:
+      - SYS_PTRACE
     depends_on:
       - nats
       - kuzu-setup-script
@@ -71,11 +77,14 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - kuzu-data:/data/kuzu
+      - ./perf:/perf
 
   answer-service:
     build:
       context: ./answer-service
-      target: app
+      target: perf
+    cap_add:
+      - SYS_PTRACE
     depends_on:
       - nats
     networks: ["pipeline"]
@@ -85,7 +94,8 @@ services:
       - NATS_PORT=4222
       - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-
+    volumes:
+      - ./perf:/perf
 networks:
   pipeline:
     name: pipeline

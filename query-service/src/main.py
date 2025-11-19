@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import json
 import kuzu
 
@@ -12,6 +13,14 @@ from .config import (
     KUZU_DB_PATH,      
     get_logger,
 )
+
+shutdown = False
+def handle_shutdown(signum, frame):
+    global shutdown
+    shutdown = True
+
+signal.signal(signal.SIGINT, handle_shutdown)
+signal.signal(signal.SIGTERM, handle_shutdown)
 
 from .modules.text2cypher import generate_cypher
 
@@ -61,7 +70,7 @@ async def main():
 
     logger.debug(f"Subscribed to '{topic}' on {NATS_HOST}:{NATS_PORT}")
 
-    while True:
+    while not shutdown:
         await asyncio.sleep(1)
 
 
