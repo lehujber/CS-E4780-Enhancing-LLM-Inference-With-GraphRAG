@@ -1,4 +1,5 @@
 import asyncio
+import json
 from nats.aio.client import Client as NATS
 from nats.aio.msg import Msg as NATSMsg
 
@@ -12,8 +13,11 @@ from .config import (
 logger = get_logger("main")
 
 async def message_handler(msg: NATSMsg):
-    data = msg.data.decode()
-    logger.debug(f"Received a message on '{msg.subject}': {data}")
+    # data = msg.data.decode()
+    # logger.debug(f"Received a message on '{msg.subject}': {data}")
+    parsed_data = json.loads(msg.data.decode())
+    logger.debug(f"Received a message on '{msg.subject}': \n question: {parsed_data["question"]} \n cypher: {parsed_data["cypher"]} \n columns: {parsed_data["columns"]} \n rows: {len(parsed_data["rows"])}")
+
 
     # TODO: implement answer generation
     await msg.respond(b"Sample answer response")

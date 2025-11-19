@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import json
+import hashlib
 
 from pymemcache.client import base
 
@@ -56,9 +57,16 @@ async def health_check():
 async def answer_question(question: QuestionRequest):
     logger.debug(f"Question received: {question.question}")
 
-    cached_value = mem_client.get(question.question)
+    # Use a safe memcache key (hash of the question) because memcached keys
+    # cannot contain whitespace or certain characters. We store and lookup by
+    # the SHA-256 hex digest of the question string.
+    cache_key = hashlib.sha256(question.question.encode()).hexdigest()
+    cached_value = mem_client.get(cache_key)
     if cached_value:
         logger.debug(f"Cache hit for question: {question.question}")
+        # pymemcache returns bytes for stored values; decode to string if needed
+        if isinstance(cached_value, (bytes, bytearray)):
+            cached_value = cached_value.decode()
         return {"question": question.question, "answer": cached_value}
 
     logger.debug(f"Cache miss for question: {question.question}")
@@ -69,16 +77,18 @@ async def answer_question(question: QuestionRequest):
         logger.debug(f"Requested question on NATS topic {db_query_topic}")
         db_request_payload = json.dumps({"question": question.question}).encode()
         db_answer = await nats_client.request(db_query_topic, db_request_payload, timeout=30)
-
-        data = db_answer.data.decode()  
-        logger.debug(f"Received DB answer: {data}")
+    
+        data = db_answer.data.decode()
+        preview = data[:200] + "..." if len(data) > 200 else data
+        logger.debug(f"Received DB answer: {preview}")
 
         logger.debug(f"Requested answer on NATS topic {answer_topic}")
         question_answer = await nats_client.request(answer_topic, data.encode(), timeout=30)
     
         answer = question_answer.data.decode()
 
-        mem_client.set(question.question, answer)
+        # Store the answer under the hashed key to avoid illegal key errors
+        mem_client.set(cache_key, answer)
 
         return {"question": question.question, "answer": answer}
     except Exception as e:
