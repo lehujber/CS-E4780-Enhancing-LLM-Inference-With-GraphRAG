@@ -6,6 +6,11 @@ Course project 2 for CS-E4780 at Aalto university
 docker compose --env-file .composeEnv up --build
 ```
 
+## Running the application in benchmark mode:
+```
+docker compose --file docker-compose-benchmark.yaml --env-file .composeEnv up --build
+```
+
 ## Submitting a question:
 ```
 curl --header "Content-Type: application/json" \
