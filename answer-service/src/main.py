@@ -1,5 +1,6 @@
 import asyncio
 import json
+import signal
 from nats.aio.client import Client as NATS
 from nats.aio.msg import Msg as NATSMsg
 
@@ -12,6 +13,14 @@ from .config import (
     OPENROUTER_API_KEY,
     get_logger
 )
+
+shutdown = False
+def handle_shutdown(signum, frame):
+    global shutdown
+    shutdown = True
+
+signal.signal(signal.SIGINT, handle_shutdown)
+signal.signal(signal.SIGTERM, handle_shutdown)
 
 logger = get_logger("main")
 
@@ -81,7 +90,7 @@ async def main():
 
     logger.debug(f"Subscribed to topic '{topic}' on NATS server at {NATS_HOST}:{NATS_PORT}")
 
-    while True:
+    while not shutdown:
         await asyncio.sleep(1)
 
 if __name__ == "__main__":
