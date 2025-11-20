@@ -10,6 +10,7 @@ docker compose --env-file .composeEnv up --build
 ```
 docker compose --file docker-compose-benchmark.yaml --env-file .composeEnv up --build
 ```
+Note that you may have to create the perf and benchmark-data folders in advance due to unix filesystem permission issues.
 
 ## Submitting a question:
 ```

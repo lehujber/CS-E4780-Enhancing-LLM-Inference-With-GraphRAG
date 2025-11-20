@@ -29,8 +29,6 @@ services:
     build:
       context: ./question-api
       target: perf
-    cap_add:
-      - SYS_PTRACE
     ports:
       - "8000:8000"
     depends_on:
@@ -62,8 +60,6 @@ services:
     build:
       context: ./query-service
       target: perf
-    cap_add:
-      - SYS_PTRACE
     depends_on:
       - nats
       - kuzu-setup-script
@@ -83,8 +79,6 @@ services:
     build:
       context: ./answer-service
       target: perf
-    cap_add:
-      - SYS_PTRACE
     depends_on:
       - nats
     networks: ["pipeline"]
@@ -96,6 +90,24 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - ./perf:/perf
+
+  benchmark-service:
+    build: ./benchmark-service
+    depends_on:
+      - question-api
+      - nats
+      - query-service
+      - answer-service
+    networks: ["pipeline"]
+    environment:
+      - API_ENDPOINT_URL=http://question-api:8000
+      - NATS_HOST=nats
+      - NATS_PORT=4222
+      - NATS_DB_QUERY_TOPIC=${NATS_DB_QUERY_TOPIC:-db-query}
+      - NATS_ANSWER_TOPIC=${NATS_ANSWER_TOPIC:-answer}
+    volumes:
+      - ./benchmark-data:/benchmark-data
+
 networks:
   pipeline:
     name: pipeline
