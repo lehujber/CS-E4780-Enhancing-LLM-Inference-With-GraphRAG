@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import json
 import hashlib
+import time
 
 from pymemcache.client import base
 
@@ -67,9 +68,11 @@ async def answer_question(question: QuestionRequest):
         # pymemcache returns bytes for stored values; decode as UTF-8
         if isinstance(cached_value, (bytes, bytearray)):
             cached_value = cached_value.decode('utf-8')
-        return {"question": question.question, "answer": cached_value}
+        return {"question": question.question, "answer": cached_value, "cached": True}
 
     logger.debug(f"Cache miss for question: {question.question}")
+
+    timings = {}
 
     #TODO: implement calls to NATS and other services to get the answer
 
@@ -77,9 +80,15 @@ async def answer_question(question: QuestionRequest):
     try:
         logger.debug(f"Requesting query on NATS topic {db_query_topic}")
         db_request_payload = json.dumps({"question": question.question}).encode()
+        
+        t0 = time.perf_counter()
         db_answer = await nats_client.request(db_query_topic, db_request_payload, timeout=30)
+        timings["query_service_latency_ms"] = (time.perf_counter() - t0) * 1000
         
         data = db_answer.data.decode()
+        db_response_json = json.loads(data)
+        timings["query_service_internal"] = db_response_json.get("timings", {})
+
         preview = data[:300] + "..." if len(data) > 300 else data
         logger.debug(f"Received DB answer: {preview}")
     except Exception as e:
@@ -89,9 +98,16 @@ async def answer_question(question: QuestionRequest):
     # Step 2: Generate natural language answer
     try:
         logger.debug(f"Requesting answer on NATS topic {answer_topic}")
-        question_answer = await nats_client.request(answer_topic, data.encode(), timeout=30)
         
-        answer = question_answer.data.decode('utf-8')
+        t0 = time.perf_counter()
+        question_answer = await nats_client.request(answer_topic, data.encode(), timeout=30)
+        timings["answer_service_latency_ms"] = (time.perf_counter() - t0) * 1000
+        
+        answer_data = question_answer.data.decode('utf-8')
+        answer_response_json = json.loads(answer_data)
+        answer = answer_response_json.get("answer", "")
+        timings["answer_service_internal"] = answer_response_json.get("timings", {})
+
         preview = answer[:300] + "..." if len(answer) > 300 else answer
         logger.debug(f"Received answer: {preview}")
     except Exception as e:
@@ -107,4 +123,4 @@ async def answer_question(question: QuestionRequest):
         # Log but don't fail if caching fails
         logger.warning(f"Failed to cache answer: {e}")
 
-    return {"question": question.question, "answer": answer}
+    return {"question": question.question, "answer": answer, "timings": timings}
