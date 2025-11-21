@@ -22,24 +22,35 @@ def handle_shutdown(signum, frame):
 signal.signal(signal.SIGINT, handle_shutdown)
 signal.signal(signal.SIGTERM, handle_shutdown)
 
-from .modules.text2cypher import generate_cypher
+from .modules.text2cypher import generate_cypher, repair_cypher, get_schema_dict
 
 logger = get_logger("main")
 
 
-def run_query(question: str) -> dict:
-    db = kuzu.Database(KUZU_DB_PATH, read_only=True)
-    conn = kuzu.Connection(db)
+def self_refinement_loop(question: str, full_schema: dict, conn: kuzu.Connection) -> str:
+    # 1. Generate
+    cypher, pruned_schema = generate_cypher(question, full_schema)
 
-    cypher, _ = generate_cypher(question, conn)
-    res = conn.execute(cypher)
+    # Self-correction loop
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # 2. Validate (dry-run)
+            # EXPLAIN checks syntax and binding without running the full query plan
+            conn.execute(f"EXPLAIN {cypher}")
+            logger.info(f"Validation succeeded for query: {cypher}")
+            break
+        except Exception as e:
+            logger.warning(f"Validation failed (attempt {attempt+1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                logger.error("Max retries reached. Proceeding with potentially invalid query.")
+                break
+            
+            # 3. Repair
+            cypher = repair_cypher(question, cypher, str(e), pruned_schema, full_schema)
+            logger.info(f"Repaired query: {cypher}")
 
-    return {
-        "question": question,
-        "cypher": cypher,
-        "columns": res.get_column_names(), # In Kuzu 0.11+, use get_column_names() instead of column_names()
-        "rows": [list(r) for r in res],
-    }
+    return cypher
 
 
 async def message_handler(msg: NATSMsg):
@@ -53,7 +64,23 @@ async def message_handler(msg: NATSMsg):
             await msg.respond(b'{"error":"missing question"}')
             return
 
-        result = run_query(question)
+        db = kuzu.Database(KUZU_DB_PATH, read_only=True)
+        conn = kuzu.Connection(db)
+
+        full_schema = get_schema_dict(conn)
+        # logger.debug(f"Full schema: {full_schema}")
+
+        cypher = self_refinement_loop(question, full_schema, conn)
+
+        res = conn.execute(cypher)
+
+        result = {
+            "question": question,
+            "cypher": cypher,
+            "columns": res.get_column_names(), # In Kuzu 0.11+, use get_column_names() instead of column_names()
+            "rows": [list(r) for r in res],
+        }
+
         await msg.respond(json.dumps(result).encode())
 
     except Exception as e:

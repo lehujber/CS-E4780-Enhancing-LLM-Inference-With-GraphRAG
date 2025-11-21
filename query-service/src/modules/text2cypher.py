@@ -1,4 +1,5 @@
 # --- deps ---
+import re
 import os
 from typing import Any
 from pydantic import BaseModel, Field
@@ -118,18 +119,119 @@ class Text2Cypher(dspy.Signature):
     fewshot_examples: str = dspy.InputField()   # NEW
     query: Query = dspy.OutputField()
 
+class RepairCypher(dspy.Signature):
+    """
+    The previous Cypher query was invalid. Fix it based on the error message.
+    Ensure the query respects the schema and syntax rules.
+    
+    <HINTS>
+    - All the dates in the database are strings.
+    - If you need to do a comparison on a date property, convert it using `date(<val>)`.
+    - Use `date_part('year', date(<val>))` instead of `year(val)`. Expected: (STRING,DATE) -> INT64 (Return type)
+    - Do not use `datetime().year`.
+    - Use `date()` to get current date if needed, but prefer matching on properties.
+    </HINTS>
+    """
+    question: str = dspy.InputField()
+    input_schema: Any = dspy.InputField()
+    full_schema: Any = dspy.InputField()
+    invalid_query: str = dspy.InputField()
+    error_message: str = dspy.InputField()
+    query: Query = dspy.OutputField()
+
 # --- Compiled modules ---
 _prune = dspy.Predict(PruneSchema)
 _text2cypher = dspy.Predict(Text2Cypher)
+_repair = dspy.Predict(RepairCypher)
 
-def generate_cypher(question: str, conn: kuzu.Connection) -> tuple[str, dict]:
+def post_process_cypher(query: str) -> str:
+    """
+    Applies rule-based fixes to the generated Cypher query.
+    """
+    # 1. Ensure proper property projection
+    # Map variable -> Label
+    var_to_label = {}
+    # Regex for (var:Label)
+    for match in re.finditer(r"\(\s*([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_]+)", query):
+        var, label = match.groups()
+        var_to_label[var] = label
+        
+    if var_to_label:
+        # Split by RETURN to find the last clause
+        parts = re.split(r"(?i)(\bRETURN\b)", query)
+        if len(parts) >= 3:
+            last_body = parts[-1]
+            
+            # Separate body from suffix (ORDER BY, LIMIT, SKIP)
+            suffix_pattern = re.compile(r"(\s+(?:ORDER\s+BY|SKIP|LIMIT).*)", re.DOTALL | re.IGNORECASE)
+            suffix_match = suffix_pattern.search(last_body)
+            
+            if suffix_match:
+                content = last_body[:suffix_match.start()]
+                suffix = suffix_match.group(1)
+            else:
+                content = last_body
+                suffix = ""
+                
+            def replace_var(m):
+                v = m.group(1)
+                if v in var_to_label:
+                    prop = "knownName" if var_to_label[v] == "Scholar" else "name"
+                    return f"{v}.{prop}"
+                return v
+            
+            # Replace bare variables not followed by . or (
+            new_content = re.sub(r"\b([a-zA-Z0-9_]+)\b(?!\s*[\.\(])", replace_var, content)
+            
+            parts[-1] = new_content + suffix
+            query = "".join(parts)
+
+    # 2. Enforce lowercase comparisons
+    # Properties to wrap in toLower()
+    target_props = [
+        "name", "scholar_type", "fullName", "knownName", 
+        "gender", "prize_id", "category", "motivation"
+    ]
+    
+    # Regex components
+    # Match properties: variable.property
+    props_pattern = r"\b\w+\.(?:" + "|".join(target_props) + r")\b"
+    # Match string literals: '...' or "..."
+    str_pattern = r"'[^']*'|\"[^\"]*\""
+    
+    # Combined target: property OR string
+    target_pattern = f"(?:{props_pattern}|{str_pattern})"
+    
+    # Regex to find targets, optionally preceded by toLower(
+    # Group 'prefix': matches 'toLower(' (case-insensitive, with optional spaces)
+    # Group 'target': matches the property or string
+    pattern = re.compile(r"(?P<prefix>(?i:toLower\s*\(\s*))?(?P<target>" + target_pattern + r")")
+    
+    def replace(match):
+        if match.group("prefix"):
+            # Already wrapped, return as is
+            return match.group(0)
+        return f"toLower({match.group('target')})"
+        
+    query = pattern.sub(replace, query)
+
+    # 3. Ensure LIMIT 100 if not present
+    if not re.search(r"\bLIMIT\s+\d+", query, re.IGNORECASE):
+        query = query.rstrip()
+        if query.endswith(";"):
+            query = query[:-1] + " LIMIT 100;"
+        else:
+            query += " LIMIT 100"
+
+    return query
+
+def generate_cypher(question: str, full_schema: dict[str, list[dict]]) -> tuple[str, dict]:
     """
     1) Extract full schema from Kuzu
     2) Prune schema w.r.t. the question
     3) Select few-shot exemplars based on similarity
     4) Generate Cypher from pruned schema + few-shot context
     """
-    full_schema = get_schema_dict(conn)
     pruned = _prune(question=question, input_schema=full_schema).pruned_schema.model_dump()
 
     fewshot_block = get_fewshot_block(question, k=3)
@@ -140,7 +242,20 @@ def generate_cypher(question: str, conn: kuzu.Connection) -> tuple[str, dict]:
         fewshot_examples=fewshot_block,  
     ).query.query
 
+    cy = post_process_cypher(cy)
+
     return cy, pruned
+
+def repair_cypher(question: str, invalid_query: str, error_message: str, schema: dict, full_schema: dict) -> str:
+    cy = _repair(
+        question=question,
+        input_schema=schema,
+        full_schema=full_schema,
+        invalid_query=invalid_query,
+        error_message=error_message
+    ).query.query
+    
+    return post_process_cypher(cy)
 
 if __name__ == "__main__":
     db = kuzu.Database("nobel.kuzu", read_only=True)
