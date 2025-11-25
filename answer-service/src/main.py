@@ -1,6 +1,7 @@
 import asyncio
 import json
 import signal
+import time
 from nats.aio.client import Client as NATS
 from nats.aio.msg import Msg as NATSMsg
 
@@ -65,19 +66,28 @@ async def message_handler(msg: NATSMsg):
         # Following the professor codebase: flatten rows into a simple list
         context = str([item for row in rows for item in row])
 
+        t0 = time.perf_counter()
         result = answer_generator(
             question=question,
             cypher_query=cypher,
             context=context
         )
+        answer_gen_time = (time.perf_counter() - t0) * 1000
         answer = result.response
 
         logger.info(f"Generated answer for: '{question}'")
-        await msg.respond(answer.encode("utf-8"))
+        
+        response_payload = {
+            "answer": answer,
+            "timings": {
+                "llm_generation_ms": answer_gen_time
+            }
+        }
+        await msg.respond(json.dumps(response_payload).encode("utf-8"))
 
     except Exception as e:
         logger.error(f"Error in message handler: {e}")
-        error_msg = "Sorry, I encountered an error while generating the answer."
+        error_msg = json.dumps({"error": "Sorry, I encountered an error while generating the answer."})
         await msg.respond(error_msg.encode("utf-8"))
 
 async def main():
